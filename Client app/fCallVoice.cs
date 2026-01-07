@@ -37,6 +37,7 @@ namespace Client_app
             pageHeader1.Text = "Đang gửi yêu cầu";
             freePort = GetFreePort();
             udp = new UdpClient(freePort);
+            udp.Client.ReceiveTimeout = 3500;
             socket.MessageReceived += OnMessageReceived;
             lbTarget.Text = "Đang gọi tới " + target.name;
             pbAvatarTarget.Image = fMain.Base64ToImage(target.avatarencoded);
@@ -146,19 +147,39 @@ namespace Client_app
         {
             IPEndPoint ep = null;
 
-            while (isCalling)
+            while (true)
             {
                 try
                 {
-                    var data = udp.Receive(ref ep);
+                    byte[] data = udp.Receive(ref ep);
                     byte[] decryptedAudio = AesCrypto.Decrypt(
-    data,
-    aes.Key,
-    aes.IV
-);
+                        data,
+                        aes.Key,
+                        aes.IV
+                    );
                     buffer.AddSamples(decryptedAudio, 0, decryptedAudio.Length);
+                    if (decryptedAudio.Length < 1600)
+                    {
+                        Console.WriteLine("Không nhận được tín hiệu!");
+                        this.Invoke(new Action(() => EndCall(false)));
+                        break;
+                    }
                 }
-                catch { break; }
+                catch (SocketException ex)
+                {
+                    // Nếu mã lỗi là 10060 (Timed out)
+                    if (ex.SocketErrorCode == SocketError.TimedOut)
+                    {
+                        Console.WriteLine("UDP Timeout - Đối phương mất kết nối");
+                        EndCall(false); // Đóng cuộc gọi
+                        break;
+                    }
+                }
+                catch
+                {
+                    EndCall(false);
+                    break;
+                }
             }
         }
         private void btnEndCall_Click(object sender, EventArgs e)

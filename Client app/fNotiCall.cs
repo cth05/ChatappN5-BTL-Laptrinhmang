@@ -49,13 +49,27 @@ namespace Client_app
                         aes.IV
                     );
                     buffer.AddSamples(decryptedAudio, 0, decryptedAudio.Length);
-
+                    if (decryptedAudio.Length < 1600)
+                    {
+                        Console.WriteLine("Không nhận được tín hiệu!");
+                        this.Invoke(new Action(() => EndCall(false)));
+                        break;
+                    }
+                }
+                catch (SocketException ex)
+                {
+                    // Nếu mã lỗi là 10060 (Timed out)
+                    if (ex.SocketErrorCode == SocketError.TimedOut)
+                    {
+                        Console.WriteLine("UDP Timeout - Đối phương mất kết nối");
+                        EndCall(false); // Đóng cuộc gọi
+                        break;
+                    }
                 }
                 catch
                 {
                     EndCall(false);
                     break;
-
                 }
             }
         }
@@ -88,6 +102,7 @@ namespace Client_app
             peerEP = new IPEndPoint(IPAddress.Parse(peerIp), peerPort);
             int freePort = GetFreePort();
             udp = new UdpClient(freePort);
+            udp.Client.ReceiveTimeout = 3500;
             socket.MessageReceived += OnMessageReceived;
             isCalling = true;
             ChatMessage accept = new ChatMessage

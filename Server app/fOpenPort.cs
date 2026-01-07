@@ -88,15 +88,29 @@ namespace Server_app
         }
         public static string GetLocalIPv4()
         {
-            foreach (var ip in Dns.GetHostAddresses(Dns.GetHostName()))
+            string localIP = "";
+            using (Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, 0))
             {
-                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                try
                 {
-                    return ip.ToString();
+                    socket.Connect("8.8.8.8", 65530);
+                    IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+                    localIP = endPoint.Address.ToString();
+                }
+                catch
+                {
+                    // Nếu không có mạng, lấy IP đầu tiên tìm thấy
+                    var host = Dns.GetHostEntry(Dns.GetHostName());
+                    foreach (var ip in host.AddressList)
+                    {
+                        if (ip.AddressFamily == AddressFamily.InterNetwork)
+                        {
+                            return ip.ToString();
+                        }
+                    }
                 }
             }
-            return null;
+            return localIP;
         }
-
     }
 }
