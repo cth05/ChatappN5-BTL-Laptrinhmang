@@ -8,8 +8,11 @@ using System.Data;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Net.Mail;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -37,12 +40,60 @@ namespace Server_app
             this.Close();
 
         }
+        public static bool IsValidEmail(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return false;
+
+            return Regex.IsMatch(email,
+                @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                RegexOptions.IgnoreCase);
+        }
         private void btnRegister_Click(object sender, EventArgs e)
         {
-            string email = txtEmail.Text.ToLower();
-            string name = txtName.Text;
-            string password = txtPassword.Text;
             string avt = !string.IsNullOrEmpty(fileSelected) ? ImageToBase64(fileSelected) : "";
+            string email = txtEmail.Text.ToLower();
+            string password = txtPassword.Text;
+            string name = txtName.Text;
+            if (!IsValidEmail(email))
+            {
+                AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", "Email nhập vào không hợp lệ", AntdUI.TType.Error)
+                {
+                    CancelText = "Cancel",
+                    OkText = "OK",
+                    OnOk = config =>
+                    {
+                        return true;
+                    },
+                });
+                return;
+            }
+            if (string.IsNullOrEmpty(password))
+            {
+                AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", "Mật khẩu không được bỏ trống", AntdUI.TType.Error)
+                {
+                    CancelText = "Cancel",
+                    OkText = "OK",
+                    OnOk = config =>
+                    {
+                        return true;
+                    },
+                });
+                return;
+            }
+            else if (string.IsNullOrEmpty(name))
+            {
+                AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", "Tên không được bỏ trống", AntdUI.TType.Error)
+                {
+                    CancelText = "Cancel",
+                    OkText = "OK",
+                    OnOk = config =>
+                    {
+                        return true;
+                    },
+                });
+                return;
+            }
             AuthMessage check = fMain.GetUserPublicByEmail(email);
             if (check != null)
             {
@@ -58,6 +109,7 @@ namespace Server_app
             }
             else
             {
+                password = Sha256Hash(password);
                 if (fMain.InsertUser(name, email, password, avt))
                 {
                     AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", "Tạo tài khoản thành công", AntdUI.TType.Info)
@@ -73,7 +125,7 @@ namespace Server_app
                                 email = check.email,
                                 name = check.name,
                                 avatarencoded = check.avatarencoded,
-                                password = password
+                                password = Sha256Hash(password)
                             };
                             this.DialogResult = DialogResult.OK;
                             return true;
@@ -119,6 +171,15 @@ namespace Server_app
         private void fRegister_FormClosing(object sender, FormClosingEventArgs e)
         {
             
+        }
+        public static string Sha256Hash(string input)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(input);
+                byte[] hash = sha.ComputeHash(bytes);
+                return Convert.ToBase64String(hash);
+            }
         }
     }
 }

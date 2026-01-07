@@ -278,7 +278,8 @@ namespace Server_app
             if(!File.Exists(dbPath))
             {
                 InitDB.InitDatabase(Application.StartupPath);
-            }    
+                AntdUI.Message.info(this, "Khởi tạo cơ sở dữ liệu", Font);
+            }
             table.EmptyText = "Không có dữ liệu";
             InitTable();
             users = GetUsers();
@@ -419,17 +420,25 @@ namespace Server_app
 
         private void btnDeleteSelected_Click(object sender, EventArgs e)
         {
+            List<User> selectedUsers = new List<User>();
             foreach (User u in users)
-            {
                 if (u.check)
+                    selectedUsers.Add(u);
+            AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", $"Xác nhận xóa {selectedUsers.Count} user", AntdUI.TType.Warn)
+            {
+                CancelText = "Cancel",
+                OkText = "Yes",
+                OnOk = config =>
                 {
-                    DeleteUser(u.id);
-                    users.Remove(u);
-                    btnDeleteSelected_Click(sender, e);
-                    return;
-                }
-            }
-            LoadTable();
+                    foreach(User u in selectedUsers)
+                    {
+                        DeleteUser(u.id);
+                        users.Remove(u);
+                    }
+                    LoadTable();
+                    return true;
+                },
+            });
         }
 
         private void btnAddUser_Click(object sender, EventArgs e)

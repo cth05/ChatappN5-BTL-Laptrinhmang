@@ -297,11 +297,15 @@ namespace Client_app
         private void fMain_Load(object sender, EventArgs e)
         {
             if (!File.Exists("chat.db"))
+            {
                 InitDb.CreateTable();
+                AntdUI.Message.info(this, "Khởi tạo cơ sở dữ liệu", Font);
+            }    
             if (!Directory.Exists("Key"))
                 Directory.CreateDirectory("Key");
             if(!File.Exists(Path.Combine("Key", "private.key")) || !File.Exists(Path.Combine("Key", "public.key")))
             {
+                AntdUI.Message.info(this, "Khởi tạo RSA", Font);
                 rsa = new RSACryptoServiceProvider(2048);
                 string privateKey = rsa.ToXmlString(true);
                 string publicKey = rsa.ToXmlString(false);
@@ -310,6 +314,7 @@ namespace Client_app
             }
             else
             {
+                AntdUI.Message.info(this, "Import RSA", Font);
                 rsa = new RSACryptoServiceProvider();
                 string privateKey = File.ReadAllText(Path.Combine("Key", "private.key"));
                 rsa.FromXmlString(privateKey);
@@ -475,7 +480,7 @@ namespace Client_app
             {
                 e.Item.Select = true;
                 target = userChatList.Keys.FirstOrDefault(x => x.id.ToString() == e.Item.ID);
-                lbTarget.Text = $"{target.id}: {target.name}";
+                lbTarget.Text = $"{target.name}";
                 ChatList chatlist;
                 if (!userChatList.TryGetValue(target, out chatlist))
                 {

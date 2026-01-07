@@ -7,8 +7,10 @@ using System.ComponentModel;
 using System.Data;
 using System.Drawing;
 using System.Linq;
+using System.Net.Mail;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -72,16 +74,61 @@ namespace Client_app
         }
         private void btnLogin_Click(object sender, EventArgs e)
         {
+            string email = txtEmail.Text.ToLower();
+            string password = txtPassword.Text;
+            if (!IsValidEmail(email))
+            {
+                AntdUI.Modal.open(new Modal.Config(this, $"Thông báo","Email nhập vào không hợp lệ", AntdUI.TType.Error)
+                {
+                    CancelText = "Cancel",
+                    OkText = "OK",
+                    OnOk = config =>
+                    {
+                        return true;
+                    },
+                });
+                return;
+            }
+            if (string.IsNullOrEmpty(password))
+            {
+                AntdUI.Modal.open(new Modal.Config(this, $"Thông báo", "Mật khẩu không được bỏ trống", AntdUI.TType.Error)
+                {
+                    CancelText = "Cancel",
+                    OkText = "OK",
+                    OnOk = config =>
+                    {
+                        return true;
+                    },
+                });
+                return;
+            }
             AuthMessage authMsg = new AuthMessage
             {
                 type = "login",
-                email = txtEmail.Text,
-                password = txtPassword.Text,
+                email = email,
+                password = Sha256Hash(password),
                 pubkeyrsa= pubKeyRsa
             };
             socket.SendMessage(JsonConvert.SerializeObject(authMsg, Formatting.None));
         }
+        public static bool IsValidEmail(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return false;
 
+            return Regex.IsMatch(email,
+                @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+                RegexOptions.IgnoreCase);
+        }
+        public static string Sha256Hash(string input)
+        {
+            using (SHA256 sha = SHA256.Create())
+            {
+                byte[] bytes = Encoding.UTF8.GetBytes(input);
+                byte[] hash = sha.ComputeHash(bytes);
+                return Convert.ToBase64String(hash);
+            }
+        }
         private void fLogin_Load(object sender, EventArgs e)
         {
 
