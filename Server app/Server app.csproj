@@ -76,6 +76,7 @@
     <Compile Include="fRegister.Designer.cs">
       <DependentUpon>fRegister.cs</DependentUpon>
     </Compile>
+    <Compile Include="InitDB.cs" />
     <Compile Include="Model.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

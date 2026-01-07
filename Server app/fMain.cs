@@ -275,6 +275,10 @@ namespace Server_app
         }
         private void fMain_Load(object sender, EventArgs e)
         {
+            if(!File.Exists(dbPath))
+            {
+                InitDB.InitDatabase(Application.StartupPath);
+            }    
             table.EmptyText = "Không có dữ liệu";
             InitTable();
             users = GetUsers();
