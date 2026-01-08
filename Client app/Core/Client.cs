@@ -55,7 +55,8 @@ namespace Client_app
                     }
 
                     string msg = Encoding.UTF8.GetString(data);
-                    MessageReceived?.Invoke(msg);
+                    Console.WriteLine("Received message: " + msg);
+                    Task.Run(() => MessageReceived?.Invoke(msg));
                 }
             }
             catch

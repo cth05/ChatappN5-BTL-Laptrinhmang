@@ -101,6 +101,7 @@
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.Text = "fCallVoice";
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.fCallVoice_FormClosing);
+            this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.fCallVoice_FormClosed);
             this.Load += new System.EventHandler(this.fCallVoice_Load);
             ((System.ComponentModel.ISupportInitialize)(this.pbAvatarTarget)).EndInit();
             this.ResumeLayout(false);

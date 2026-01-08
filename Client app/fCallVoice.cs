@@ -31,6 +31,8 @@ namespace Client_app
         WaveOutEvent waveOut;
         BufferedWaveProvider buffer;
         AesSession aes;
+        bool endCallActive = false;
+        bool endCallMessage = false;
         public bool IsSuccessed { get; private set; } = false;
         private void fCallVoice_Load(object sender, EventArgs e)
         {
@@ -66,82 +68,116 @@ namespace Client_app
             this.myInfo = myInfo;
             this.target = target;
             this.aes = aes;
+            socket.MessageReceived += OnMessageReceived;
         }
         void EndCall(bool me)
         {
-            if (InvokeRequired)
+            lock (this)
             {
-                BeginInvoke(new Action(() => EndCall(me)));
-                return;
-            }
-            isCalling = false;
-            waveIn?.StopRecording();
-            waveOut?.Stop();
-
-            udp?.Close();
-            udpReceiveThread?.Abort();
-
-            if (me)
-            {
-                ChatMessage msg = new ChatMessage
+                if (InvokeRequired)
                 {
-                    type = "call-voice-end",
-                    from = myInfo,
-                    to = target
-                };
-                socket.SendMessage(JsonConvert.SerializeObject(msg));
-            }
-            else
-            {
-                AntdUI.Modal.open(new Modal.Config(this, "Thông báo", "Cuộc gọi đã kết thúc", AntdUI.TType.Info)
+                    BeginInvoke(new Action(() => EndCall(me)));
+                    return;
+                }
+                if (endCallActive)
                 {
-                    CancelText = "Cancel",
-                    OkText = "OK",
-                    OnOk = config =>
+                    this.Close();
+                    return;
+                }
+                endCallActive = true;
+                isCalling = false;
+                waveIn?.StopRecording();
+                waveOut?.Stop();
+
+                udp?.Close();
+                udpReceiveThread?.Abort();
+
+                if (me)
+                {
+                    ChatMessage msg = new ChatMessage
                     {
-                        return true;
-                    },
-                });
+                        type = "call-voice-end",
+                        from = myInfo,
+                        to = target
+                    };
+                    socket.SendMessage(JsonConvert.SerializeObject(msg));
+                }
+                else
+                {
+                    AntdUI.Modal.open(new Modal.Config(this, "Thông báo", "Cuộc gọi đã kết thúc", AntdUI.TType.Info)
+                    {
+                        CancelText = "Cancel",
+                        OkText = "OK",
+                        OnOk = config =>
+                        {
+                            return true;
+                        },
+                    });
+                }
+                this.Close();
             }
-            this.Close();
         }
         void StartVoice()
         {
-            // ===== PLAYBACK =====
-            buffer = new BufferedWaveProvider(
-                new WaveFormat(8000, 16, 1)
-            );
-
-            waveOut = new WaveOutEvent();
-            waveOut.Init(buffer);
-            waveOut.Play();
-
-            // ===== CAPTURE =====
-            waveIn = new WaveInEvent
+            try
             {
-                WaveFormat = new WaveFormat(8000, 16, 1)
-            };
-
-            waveIn.DataAvailable += (s, e) =>
-            {
-                byte[] rawAudio = new byte[e.BytesRecorded];
-                Buffer.BlockCopy(e.Buffer, 0, rawAudio, 0, e.BytesRecorded);
-
-                byte[] encryptedAudio = AesCrypto.Encrypt(
-                    rawAudio,
-                    aes.Key,
-                    aes.IV
+                // ===== PLAYBACK =====
+                buffer = new BufferedWaveProvider(
+                    new WaveFormat(8000, 16, 1)
                 );
 
-                udp.Send(encryptedAudio, encryptedAudio.Length, peerEP);
-            };
+                waveOut = new WaveOutEvent();
+                waveOut.Init(buffer);
+                waveOut.Play();
 
-            waveIn.StartRecording();
+                // ===== CAPTURE =====
+                waveIn = new WaveInEvent
+                {
+                    WaveFormat = new WaveFormat(8000, 16, 1)
+                };
 
-            // ===== RECEIVE =====
-            udpReceiveThread = new Thread(ReceiveVoice);
-            udpReceiveThread.IsBackground = true;
-            udpReceiveThread.Start();
+                waveIn.DataAvailable += (s, e) =>
+                {
+                    byte[] rawAudio = new byte[e.BytesRecorded];
+                    Buffer.BlockCopy(e.Buffer, 0, rawAudio, 0, e.BytesRecorded);
+
+                    byte[] encryptedAudio = AesCrypto.Encrypt(
+                        rawAudio,
+                        aes.Key,
+                        aes.IV
+                    );
+
+                    udp.Send(encryptedAudio, encryptedAudio.Length, peerEP);
+                };
+
+                try
+                {
+                    waveIn.StartRecording();
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Contains("BadDeviceId calling waveInOpen"))
+                    {
+                        AntdUI.Modal.open(new Modal.Config(this, "Lỗi thiết bị âm thanh", "Không tìm thấy thiết bị ghi âm. Vui lòng kiểm tra lại kết nối của bạn.", AntdUI.TType.Error)
+                        {
+                            CancelText = "Cancel",
+                            OkText = "OK",
+                            OnOk = config =>
+                            {
+                                return true;
+                            },
+                        });
+                    }
+                    EndCall(true);
+                    return;
+                }
+
+                // ===== RECEIVE =====
+                udpReceiveThread = new Thread(ReceiveVoice);
+                udpReceiveThread.IsBackground = true;
+                udpReceiveThread.Start();
+            }
+            catch { }
         }
         void ReceiveVoice()
         {
@@ -158,22 +194,7 @@ namespace Client_app
                         aes.IV
                     );
                     buffer.AddSamples(decryptedAudio, 0, decryptedAudio.Length);
-                    if (decryptedAudio.Length < 1600)
-                    {
-                        Console.WriteLine("Không nhận được tín hiệu!");
-                        this.Invoke(new Action(() => EndCall(false)));
-                        break;
-                    }
-                }
-                catch (SocketException ex)
-                {
-                    // Nếu mã lỗi là 10060 (Timed out)
-                    if (ex.SocketErrorCode == SocketError.TimedOut)
-                    {
-                        Console.WriteLine("UDP Timeout - Đối phương mất kết nối");
-                        EndCall(false); // Đóng cuộc gọi
-                        break;
-                    }
+                    
                 }
                 catch
                 {
@@ -189,48 +210,62 @@ namespace Client_app
 
         private void fCallVoice_FormClosing(object sender, FormClosingEventArgs e)
         {
+            
+        }
+
+        private void fCallVoice_FormClosed(object sender, FormClosedEventArgs e)
+        {
             socket.MessageReceived -= OnMessageReceived;
+            udpReceiveThread?.Abort();
         }
 
         private void OnMessageReceived(string msg)
         {
-            if (InvokeRequired)
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnMessageReceived(msg))); return; }
+            try
             {
-                Invoke(new Action(() => OnMessageReceived(msg)));
-                return;
-            }
-            JObject res = JObject.Parse(msg);
-            if ((string)res["type"] == "call-voice-accept" && (int)res["from"]["id"] == target.id)
-            {
-                string peerIp = target.ipaddress;
-                int peerPort = int.Parse((string)res["message"]);
-                peerEP = new IPEndPoint(IPAddress.Parse(peerIp), peerPort);
-                pageHeader1.Text = "Cuộc gọi đã được chấp nhận";
-                isCalling = true;
-                pageHeader1.Text = "Đang gọi...";
-                IsSuccessed = true;
-                StartVoice();
-
-            }
-            else if ((string)res["type"] == "call-voice-reject" && (int)res["from"]["id"] == target.id)
-            {
-                pageHeader1.Text = "Cuộc gọi đã bị từ chối";
-                AntdUI.Modal.open(new Modal.Config(this, "Thông báo", "Cuộc gọi đã bị từ chối", AntdUI.TType.Info)
+                JObject res = JObject.Parse(msg);
+                if ((string)res["type"] == "call-voice-accept" && (int)res["from"]["id"] == target.id)
                 {
-                    CancelText = "Cancel",
-                    OkText = "OK",
-                    OnOk = config =>
+                    string peerIp = target.ipaddress;
+                    int peerPort = int.Parse((string)res["message"]);
+                    peerEP = new IPEndPoint(IPAddress.Parse(peerIp), peerPort);
+                    pageHeader1.Text = "Cuộc gọi đã được chấp nhận";
+                    isCalling = true;
+                    pageHeader1.Text = "Đang gọi...";
+                    IsSuccessed = true;
+                    StartVoice();
+
+                }
+                else if ((string)res["type"] == "call-voice-reject" && (int)res["from"]["id"] == target.id)
+                {
+                    if (endCallMessage)
+                        return;
+                    endCallMessage = true;
+                    pageHeader1.Text = "Cuộc gọi đã bị từ chối";
+                    AntdUI.Modal.open(new Modal.Config(this, "Thông báo", "Cuộc gọi đã bị từ chối", AntdUI.TType.Info)
                     {
-                        return true;
-                    },
-                });
-                this.Close();
+                        CancelText = "Cancel",
+                        OkText = "OK",
+                        OnOk = config =>
+                        {
+                            return true;
+                        },
+                    });
+                    this.Close();
+                }
+                else if ((string)res["type"] == "call-voice-end" && (int)res["from"]["id"] == target.id)
+                {
+                    pageHeader1.Text = "Cuộc gọi đã kết thúc";
+                    EndCall(false);
+                }
             }
-            else if ((string)res["type"] == "call-voice-end" && (int)res["from"]["id"] == target.id)
-            {
-                pageHeader1.Text = "Cuộc gọi đã kết thúc";
-                EndCall(false);
-            }
+            catch { }
+        }
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            socket.MessageReceived -= OnMessageReceived; // 🔥 QUAN TRỌNG
+            base.OnFormClosed(e);
         }
     }
 }

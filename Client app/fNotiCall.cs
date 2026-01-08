@@ -33,6 +33,8 @@ namespace Client_app
         WaveOutEvent waveOut;
         BufferedWaveProvider buffer;
         bool isCalling = false;
+        bool endCallActive = false;
+        bool callEndMessage = false;
         public bool IsReply { get; private set; } = false;
         void ReceiveVoice()
         {
@@ -49,27 +51,9 @@ namespace Client_app
                         aes.IV
                     );
                     buffer.AddSamples(decryptedAudio, 0, decryptedAudio.Length);
-                    if (decryptedAudio.Length < 1600)
-                    {
-                        Console.WriteLine("Không nhận được tín hiệu!");
-                        this.Invoke(new Action(() => EndCall(false)));
-                        break;
-                    }
                 }
-                catch (SocketException ex)
+                catch(Exception ex)
                 {
-                    // Nếu mã lỗi là 10060 (Timed out)
-                    if (ex.SocketErrorCode == SocketError.TimedOut)
-                    {
-                        Console.WriteLine("UDP Timeout - Đối phương mất kết nối");
-                        EndCall(false); // Đóng cuộc gọi
-                        break;
-                    }
-                }
-                catch
-                {
-                    EndCall(false);
-                    break;
                 }
             }
         }
@@ -103,7 +87,7 @@ namespace Client_app
             int freePort = GetFreePort();
             udp = new UdpClient(freePort);
             udp.Client.ReceiveTimeout = 3500;
-            socket.MessageReceived += OnMessageReceived;
+            
             isCalling = true;
             ChatMessage accept = new ChatMessage
             {
@@ -123,6 +107,12 @@ namespace Client_app
                 BeginInvoke(new Action(() => EndCall(me)));
                 return;
             }
+            if(endCallActive)
+            {
+                this.Close();
+                return;
+            }    
+            endCallActive = true;
             waveIn?.StopRecording();
             waveOut?.Stop();
             udp?.Close();
@@ -155,38 +145,61 @@ namespace Client_app
         }
         void StartVoice()
         {
-            buffer = new BufferedWaveProvider(
-                new WaveFormat(8000, 16, 1)
-            );
-
-            waveOut = new WaveOutEvent();
-            waveOut.Init(buffer);
-            waveOut.Play();
-            waveIn = new WaveInEvent
+            try
             {
-                WaveFormat = new WaveFormat(8000, 16, 1)
-            };
+                buffer = new BufferedWaveProvider(
+    new WaveFormat(8000, 16, 1)
+);
 
-            waveIn.DataAvailable += (s, e) =>
-            {
-                byte[] rawAudio = new byte[e.BytesRecorded];
-                Buffer.BlockCopy(e.Buffer, 0, rawAudio, 0, e.BytesRecorded);
+                waveOut = new WaveOutEvent();
+                waveOut.Init(buffer);
+                waveOut.Play();
+                waveIn = new WaveInEvent
+                {
+                    WaveFormat = new WaveFormat(8000, 16, 1)
+                };
 
-                byte[] encryptedAudio = AesCrypto.Encrypt(
-                    rawAudio,
-                    aes.Key,
-                    aes.IV
-                );
+                waveIn.DataAvailable += (s, e) =>
+                {
+                    byte[] rawAudio = new byte[e.BytesRecorded];
+                    Buffer.BlockCopy(e.Buffer, 0, rawAudio, 0, e.BytesRecorded);
 
-                udp.Send(encryptedAudio, encryptedAudio.Length, peerEP);
-            };
+                    byte[] encryptedAudio = AesCrypto.Encrypt(
+                        rawAudio,
+                        aes.Key,
+                        aes.IV
+                    );
 
-            waveIn.StartRecording();
+                    udp.Send(encryptedAudio, encryptedAudio.Length, peerEP);
+                };
 
-            // ===== RECEIVE =====
-            udpReceiveThread = new Thread(ReceiveVoice);
-            udpReceiveThread.IsBackground = true;
-            udpReceiveThread.Start();
+                try
+                {
+                    waveIn.StartRecording();
+                }
+                catch (Exception ex)
+                {
+                    if (ex.Message.Contains("BadDeviceId calling waveInOpen"))
+                    {
+                        AntdUI.Modal.open(new Modal.Config(this, "Lỗi thiết bị âm thanh", "Không tìm thấy thiết bị ghi âm. Vui lòng kiểm tra lại kết nối của bạn.", AntdUI.TType.Error)
+                        {
+                            CancelText = "Cancel",
+                            OkText = "OK",
+                            OnOk = config =>
+                            {
+                                return true;
+                            },
+                        });
+                    }
+                    EndCall(true);
+                    return;
+                }
+                // ===== RECEIVE =====
+                udpReceiveThread = new Thread(ReceiveVoice);
+                udpReceiveThread.IsBackground = true;
+                udpReceiveThread.Start();
+            }
+            catch { }
         }
         public static int GetFreePort()
         {
@@ -204,13 +217,21 @@ namespace Client_app
         }
         private void OnMessageReceived(string msg)
         {
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnMessageReceived(msg))); return; }
             JObject res = JObject.Parse(msg);
             if ((string)res["type"] == "call-voice-end" && (int)res["from"]["id"] == from.id)
             {
+                if (callEndMessage)
+                    return;
+                callEndMessage = true;
                 EndCall(false);
             }
         }
-
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            socket.MessageReceived -= OnMessageReceived; // 🔥 QUAN TRỌNG
+            base.OnFormClosed(e);
+        }
         private void fNotiCall_FormClosing(object sender, FormClosingEventArgs e)
         {
         }
@@ -228,6 +249,7 @@ namespace Client_app
             this.myInfo = myInfo;
             this.aes = aes;
             pageHeader1.Text = "Cuộc gọi đến từ " + from.name;
+            socket.MessageReceived += OnMessageReceived;
         }
     }
 }

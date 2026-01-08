@@ -141,6 +141,7 @@
             this.Controls.Add(this.label1);
             this.Controls.Add(this.pageHeader1);
             this.Name = "fRegister";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.FormClosing += new System.Windows.Forms.FormClosingEventHandler(this.fRegister_FormClosing);
             this.ResumeLayout(false);
             this.PerformLayout();

@@ -42,11 +42,7 @@ namespace Client_app
 
         private void OnMessageReceived(string msg)
         {
-            if (InvokeRequired)
-            {
-                Invoke(new Action(() => OnMessageReceived(msg)));
-                return;
-            }
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnMessageReceived(msg))); return; }
             JObject json = JObject.Parse(msg);
             if ((string)json["type"] == "online")
             {
@@ -211,8 +207,11 @@ namespace Client_app
                     ChatList chatlist = userChatList[existingUser];
                     f.ShowDialog(this);
                     InsertMessage(from.id, myInfo.id, "chat", f.IsReply ? $"Cuộc gọi đến" : "Đã từ chối cuộc gọi");
-                    chatlist.AddToBottom(new TextChatItem(f.IsReply ? $"Cuộc gọi đến":"Đã từ chối cuộc gọi", Base64ToImage(from.avatarencoded), from.name));
+                    chatlist.AddToBottom(new TextChatItem(f.IsReply ? $"Cuộc gọi đến" : "Đã từ chối cuộc gọi", Base64ToImage(from.avatarencoded), from.name));
+                    f.Dispose();
                 }
+                
+
             }
             else if ((string)json["type"] == "aes-handshake")
             {
@@ -631,6 +630,7 @@ namespace Client_app
                 ChatList chatlist = userChatList[existingUser];
                 InsertMessage(myInfo.id, target.id, "chat", f.IsSuccessed ? $"Đã gọi đến" : "Đã bị từ chối cuộc gọi");
                 chatlist.AddToBottom(new TextChatItem(f.IsSuccessed ? $"Đã gọi đến" : "Đã bị từ chối cuộc gọi", Base64ToImage(target.avatarencoded), target.name) { Me=true});
+                f.Dispose();
             }
 
         }
